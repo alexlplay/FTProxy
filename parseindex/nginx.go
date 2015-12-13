@@ -1,0 +1,62 @@
+package parseindex
+
+import "fmt"
+import "golang.org/x/net/html"
+import "io"
+import "regexp"
+import "strconv"
+
+func ParseNginxHtmlList(r io.Reader) ([]FsObject) {
+    fmt.Println("parse nginx")
+    z := html.NewTokenizer(r)
+
+    curObj := new(FsObject)
+    var objects []FsObject
+
+    for {
+    tt := z.Next()
+
+    switch tt {
+    case html.ErrorToken:
+        // End of the document, we're done
+        return objects
+    case html.StartTagToken:
+        t := z.Token()
+
+        if t.Data == "a" {
+            fmt.Printf("link: %s ", getTokenAttr(&t, "href"))
+            curObj.name = getTokenAttr(&t, "href")
+            curObj.otype = FS_NONE
+            curObj.size = 0
+        }
+    case html.EndTagToken:
+        t := z.Token()
+        if t.Data == "a" {
+            // return objects 
+            fmt.Println("end link")
+            z.Next()
+            dateAndSizeText := z.Token()
+            re := regexp.MustCompile("([0-9][0-9]-...-[0-9]+ [0-9][0-9]:[0-9][0-9])\\s+([0-9]+|-)")
+            match := re.FindStringSubmatch(dateAndSizeText.String())
+            if match == nil {
+                fmt.Println("No date and size regex match")
+            } else {
+                // match[1] should contain date and time, match[2] size in bytes
+                if match[2] == "-" {
+                    curObj.size = 0
+                    curObj.otype = FS_DIR
+                } else {
+                    floatSize, err := strconv.ParseFloat((match[2]), 64)
+                    if err == nil {
+                        curObj.size = int64(floatSize)
+                        curObj.otype = FS_FILE
+                    }
+                }
+                if curObj.name != "" && curObj.otype != FS_NONE {
+                    objects = append(objects, *curObj)
+                }
+            }
+        }
+    }
+    }
+}

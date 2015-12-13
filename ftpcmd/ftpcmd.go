@@ -8,7 +8,6 @@ import (
 func Close(conn net.Conn) {
     fmt.Printf("closing command connection\n")
     conn.Close()
-    
 }
 
 func Write(conn net.Conn, status int, text string) {
