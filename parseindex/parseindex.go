@@ -4,6 +4,7 @@ import "fmt"
 import "golang.org/x/net/html"
 import "cfg"
 import "net/http"
+import "strings"
 //import "bufio"
 
 type FsObjectType int
@@ -51,6 +52,7 @@ func (p ParserAutoIndex) Parse(path string) (string, bool) {
     cfg.LoadConfig("ftproxy.conf")
     vhost := cfg.GetVhost(path)
     url := fmt.Sprintf("http://%s/%s/", vhost, path)
+    fmt.Printf("URL FOR INDEX: %s\n", url)
     resp, err := http.Get(url)
     if err != nil {
         return "", false
@@ -58,7 +60,7 @@ func (p ParserAutoIndex) Parse(path string) (string, bool) {
     defer resp.Body.Close()
     var objects []FsObject
     fmt.Printf("Server header: %s\n", resp.Header["Server"][0])
-    if resp.Header["Server"][0] == "nginx" {
+    if strings.Contains(resp.Header["Server"][0], "nginx") {
         objects = ParseNginxHtmlList(resp.Body)
     } else {
         // Attempt apache

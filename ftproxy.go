@@ -345,6 +345,7 @@ func cmdCwd(session *Session, command Command) (bool) {
 }
 
 func cmdList(session *Session, command Command) (bool) {
+    fmt.Println("BEGIN CMDLIST")
     if session.dtpState == DTP_NONE {
         ftpcmd.Write(session.commandConn, 425, "Use PORT or PASV first.")
         return false
@@ -383,8 +384,10 @@ func cmdList(session *Session, command Command) (bool) {
     var listing string
     var ret bool
     if session.workingDir == "/" {
+        fmt.Println("CALLING TOP DIR PARSER")
         listing, ret = session.topDirParser.Parse(session.workingDir)
     } else {
+        fmt.Println("CALLING DEFAULT DIR PARSER")
         listing, ret = session.defaultDirParser.Parse(session.workingDir)
     }
     if ret != true {

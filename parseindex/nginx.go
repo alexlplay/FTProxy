@@ -6,8 +6,11 @@ import "io"
 import "regexp"
 import "strconv"
 
+var prenom string
+
 func ParseNginxHtmlList(r io.Reader) ([]FsObject) {
-    fmt.Println("parse nginx")
+    //allFile, _ := ioutil.ReadAll(r)
+    //fmt.Printf("%s\n", allFile)
     z := html.NewTokenizer(r)
 
     curObj := new(FsObject)
