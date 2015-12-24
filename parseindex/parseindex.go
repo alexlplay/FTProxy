@@ -5,6 +5,7 @@ import "golang.org/x/net/html"
 import "cfg"
 import "net/http"
 import "strings"
+import "time"
 //import "bufio"
 
 type FsObjectType int
@@ -17,6 +18,7 @@ const (
 type FsObject struct {
     otype FsObjectType
     name string
+    time string
     size int64
 }
 
@@ -24,9 +26,9 @@ func GenDirList(objects []FsObject) (string) {
     var listing string
     for _, object := range objects {
         if object.otype == FS_DIR {
-            listing = fmt.Sprintf("%sdrwxr-xr-x 1 0 0 1 Dec 13 10:40 %s\r\n", listing, object.name)
+            listing = fmt.Sprintf("%sdrwxr-xr-x 1 0 0 1 %s %s\r\n", listing, object.time, object.name)
         } else if object.otype == FS_FILE {
-            listing = fmt.Sprintf("%s-rwxr-xr-x 1 0 0 %d Dec 13 10:40 %s\r\n", listing, object.size, object.name)
+            listing = fmt.Sprintf("%s-rwxr-xr-x 1 0 0 %d %s %s\r\n", listing, object.size, object.time, object.name)
         }
     }
     return listing
@@ -77,8 +79,8 @@ func (p ParserConf) Parse(truc string) (string, bool) {
     vhosts := cfg.GetVhosts()
     var listing string
     for path, _  := range vhosts {
-        listing = fmt.Sprintf("%sdrwxr-xr-x 1 0 0 1 Dec 13 10:40 %s\r\n", listing, path)
+        // Generate fake timestamps for first-level directories (our list of vhosts)
+        listing = fmt.Sprintf("%sdrwxr-xr-x 1 0 0 1 %s %s\r\n", listing, time.Now().Format(time.Stamp), path)
     }
     return listing, true
-      //      listing = fmt.Sprintf("%sdrwxr-xr-x 1 0 0 1 Dec 13 10:40 %s\r\n", listing, object.name)
 }

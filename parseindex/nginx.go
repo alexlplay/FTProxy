@@ -5,6 +5,7 @@ import "golang.org/x/net/html"
 import "io"
 import "regexp"
 import "strconv"
+import "time"
 
 var prenom string
 
@@ -45,6 +46,12 @@ func ParseNginxHtmlList(r io.Reader) ([]FsObject) {
                 fmt.Println("No date and size regex match")
             } else {
                 // match[1] should contain date and time, match[2] size in bytes
+                tim, _ := time.Parse("_2-Jan-2006 15:04", match[1])
+                if tim.Year() < time.Now().Year() {
+                    curObj.time = tim.Format("Jan _2 2006")
+                } else {
+                    curObj.time = tim.Format(time.Stamp)
+                }
                 if match[2] == "-" {
                     curObj.size = 0
                     curObj.otype = FS_DIR
