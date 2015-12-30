@@ -117,6 +117,7 @@ func handleRequest(conn net.Conn) {
         "PWD":  cmdPwd,
         "CWD":  cmdCwd,
         "LIST": cmdList,
+        "FEAT": cmdFeat,
     }
 
     scanner := bufio.NewScanner(conn)
@@ -416,5 +417,12 @@ func cmdList(session *Session, command Command) (bool) {
     ftpdata.Close(session.dataConn)
     ftpcmd.Write(session.commandConn, 226, "Directory send OK.")
 
+    return true
+}
+
+func cmdFeat(session *Session, command Command) (bool) {
+    featReply := "211-Features:\r\n MDTM\r\n211 End\r\n"
+
+    ftpcmd.WriteRaw(session.commandConn, featReply)
     return true
 }
