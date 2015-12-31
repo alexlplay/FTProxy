@@ -46,12 +46,18 @@ func ParseNginxHtmlList(r io.Reader) ([]FsObject) {
                 fmt.Println("No date and size regex match")
             } else {
                 // match[1] should contain date and time, match[2] size in bytes
-                tim, _ := time.Parse("_2-Jan-2006 15:04", match[1])
-                if tim.Year() < time.Now().Year() {
+                tim, err := time.Parse("_2-Jan-2006 15:04", match[1])
+                if err == nil {
+                    curObj.time = tim
+                } else {
+                    // Failed to parse time
+                    curObj.time = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
+                }
+                /* if tim.Year() < time.Now().Year() {
                     curObj.time = tim.Format("Jan _2 2006")
                 } else {
                     curObj.time = tim.Format(time.Stamp)
-                }
+                } */
                 if match[2] == "-" {
                     curObj.size = 0
                     curObj.otype = FS_DIR

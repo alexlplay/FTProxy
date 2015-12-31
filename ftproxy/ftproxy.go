@@ -117,6 +117,8 @@ func handleRequest(conn net.Conn) {
         "PWD":  cmdPwd,
         "CWD":  cmdCwd,
         "LIST": cmdList,
+        "FEAT": cmdFeat,
+        "MDTM": cmdMdtm,
     }
 
     scanner := bufio.NewScanner(conn)
@@ -130,7 +132,7 @@ func handleRequest(conn net.Conn) {
     go ctrlTimeout(&session)
 
     for scanner.Scan() {
-        session.timer.Reset(time.Second * 60)
+        session.timer.Reset(time.Second * 60 * 3)
         // Should have a limit on line length
         fmt.Println(session)
         line := scanner.Text()
@@ -415,6 +417,34 @@ func cmdList(session *Session, command Command) (bool) {
 
     ftpdata.Close(session.dataConn)
     ftpcmd.Write(session.commandConn, 226, "Directory send OK.")
+
+    return true
+}
+
+func cmdFeat(session *Session, command Command) (bool) {
+    featReply := "211-Features:\r\n MDTM\r\n211 End\r\n"
+
+    ftpcmd.WriteRaw(session.commandConn, featReply)
+    return true
+}
+
+func cmdMdtm(session *Session, command Command) (bool) {
+    fileName := command.Args
+    var fileTime string
+    var ret bool
+    if session.workingDir == "/" {
+        fmt.Println("Mdtm (top dir parser)")
+        fileTime, ret = session.topDirParser.Mdtm(session.workingDir, fileName)
+    } else {
+        fmt.Println("Mdtm (default parser)")
+        fileTime, ret = session.defaultDirParser.Mdtm(session.workingDir, fileName)
+    }
+    if ret != true {
+        ftpcmd.Write(session.commandConn, 550, "Could not get file modification time.")
+        return false
+    }
+
+    ftpcmd.Write(session.commandConn, 213, fileTime)
 
     return true
 }

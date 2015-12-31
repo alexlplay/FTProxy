@@ -16,3 +16,8 @@ func Write(conn net.Conn, status int, text string) {
     response := fmt.Sprintf("%d %s\r\n", status, text)
     conn.Write([]byte(response))
 }
+
+func WriteRaw(conn net.Conn, rawText string) {
+    response := fmt.Sprintf("%s", rawText)
+    conn.Write([]byte(response))
+}
