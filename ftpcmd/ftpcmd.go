@@ -11,13 +11,11 @@ func Close(conn net.Conn) {
 }
 
 func Write(conn net.Conn, status int, text string) {
-    // Must format string according to FTP spec, see :
+    // Format string according to FTP spec, see :
     // https://github.com/dagwieers/vsftpd/blob/master/ftpcmdio.c
-    response := fmt.Sprintf("%d %s\r\n", status, text)
-    conn.Write([]byte(response))
+    WriteRaw(conn, fmt.Sprintf("%d %s\r\n", status, text))
 }
 
 func WriteRaw(conn net.Conn, rawText string) {
-    response := fmt.Sprintf("%s", rawText)
-    conn.Write([]byte(response))
+    conn.Write([]byte(rawText))
 }

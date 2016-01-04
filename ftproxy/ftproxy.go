@@ -54,6 +54,29 @@ type Session struct {
     defaultDirParser parseindex.Parser  // Default parser
 }
 
+// Valid commands when not authenticated
+var noauthFuncs = map[string]func(session *Session, command Command) (bool) {
+    "USER": cmdUser,
+    "PASS": cmdPass,
+    "QUIT": cmdQuit,
+}
+
+// Valid commands when authenticated
+var authFuncs = map[string]func(session *Session, command Command) (bool) {
+    "USER": cmdUser,
+    "PASS": cmdPass,
+    "MODE": cmdMode,
+    "TYPE": cmdType,
+    "QUIT": cmdQuit,
+    "PASV": cmdPasv,
+    "RETR": cmdRetr,
+    "PWD":  cmdPwd,
+    "CWD":  cmdCwd,
+    "LIST": cmdList,
+    "FEAT": cmdFeat,
+    "MDTM": cmdMdtm,
+}
+
 var state State
 
 func main() {
@@ -98,29 +121,6 @@ func main() {
 // Handles incoming requests.
 // It should have a timeout, and maybe wait before replying on some condition (negative replies?)
 func handleRequest(conn net.Conn) {
-    // Valid commands when not authenticated
-    noauthFuncs := map[string]func(session *Session, command Command) (bool) {
-        "USER": cmdUser,
-        "PASS": cmdPass,
-        "QUIT": cmdQuit,
-    }
-
-    // Valid commands when authenticated
-    authFuncs := map[string]func(session *Session, command Command) (bool) {
-        "USER": cmdUser,
-        "PASS": cmdPass,
-        "MODE": cmdMode,
-        "TYPE": cmdType,
-        "QUIT": cmdQuit,
-        "PASV": cmdPasv,
-        "RETR": cmdRetr,
-        "PWD":  cmdPwd,
-        "CWD":  cmdCwd,
-        "LIST": cmdList,
-        "FEAT": cmdFeat,
-        "MDTM": cmdMdtm,
-    }
-
     scanner := bufio.NewScanner(conn)
     session := Session{commandConn: conn, workingDir: "/", topDirParser: new(parseindex.ParserConf), defaultDirParser: new(parseindex.ParserAutoIndex)}
     var cmdCallBack func(session *Session, command Command) (bool)
@@ -140,16 +140,19 @@ func handleRequest(conn net.Conn) {
         command := parseCommand(&line)
         fmt.Printf("cmd: '%s' args: '%s'\n", command.Verb, command.Args)
         // TODO: Check is user is logged in, use a different map for logged in/not logged in
-        if session.loggedIn != true {
-            cmdCallBack, exists = noauthFuncs[command.Verb]
-        } else
-        {
-            cmdCallBack, exists = authFuncs[command.Verb]
-        }
-        if exists == true {
-            callBackRet = cmdCallBack(&session, command)
+        if command.Verb == "HELP" {
+             callBackRet = cmdHelp(&session, command)
         } else {
-            callBackRet = cmdUnknown(&session)
+             if session.loggedIn != true {
+                 cmdCallBack, exists = noauthFuncs[command.Verb]
+             } else {
+                 cmdCallBack, exists = authFuncs[command.Verb]
+             }
+             if exists == true {
+                 callBackRet = cmdCallBack(&session, command)
+             } else {
+                 callBackRet = cmdUnknown(&session)
+             }
         }
         fmt.Println(callBackRet)
         // conn.Write([]byte(strRet + "\n"))
@@ -171,6 +174,22 @@ func ctrlTimeout(session *Session) (bool) {
     state.Lock()
     state.connectionCount--
     state.Unlock()
+    return true
+}
+
+func cmdHelp(session *Session, command Command) (bool) {
+    if session.username == "" {
+        ftpcmd.Write(session.commandConn, 503, "Login with USER first.")
+        return true
+    }
+    ftpcmd.WriteRaw(session.commandConn, "214-The following commands are recognized.\n")
+    keylist := ""
+    for key, _ := range authFuncs {
+        keylist += key + " "
+    }
+    ftpcmd.WriteRaw(session.commandConn, keylist + "\n")
+    ftpcmd.Write(session.commandConn, 214, "Help OK.")
+
     return true
 }
 
@@ -422,9 +441,7 @@ func cmdList(session *Session, command Command) (bool) {
 }
 
 func cmdFeat(session *Session, command Command) (bool) {
-    featReply := "211-Features:\r\n MDTM\r\n211 End\r\n"
-
-    ftpcmd.WriteRaw(session.commandConn, featReply)
+    ftpcmd.WriteRaw(session.commandConn, "211-Features:\r\n MDTM\r\n211 End\r\n")
     return true
 }
 
