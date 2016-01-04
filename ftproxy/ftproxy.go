@@ -56,6 +56,7 @@ type Session struct {
 
 // Valid commands when not authenticated
 var noauthFuncs = map[string]func(session *Session, command Command) (bool) {
+    "FEAT": cmdFeat,
     "USER": cmdUser,
     "PASS": cmdPass,
     "QUIT": cmdQuit,
@@ -63,6 +64,7 @@ var noauthFuncs = map[string]func(session *Session, command Command) (bool) {
 
 // Valid commands when authenticated
 var authFuncs = map[string]func(session *Session, command Command) (bool) {
+    "FEAT": cmdFeat,
     "USER": cmdUser,
     "PASS": cmdPass,
     "MODE": cmdMode,
@@ -73,7 +75,6 @@ var authFuncs = map[string]func(session *Session, command Command) (bool) {
     "PWD":  cmdPwd,
     "CWD":  cmdCwd,
     "LIST": cmdList,
-    "FEAT": cmdFeat,
     "MDTM": cmdMdtm,
 }
 
