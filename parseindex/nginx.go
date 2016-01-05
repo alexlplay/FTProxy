@@ -5,6 +5,7 @@ import "golang.org/x/net/html"
 import "io"
 import "regexp"
 import "strconv"
+import "strings"
 import "time"
 
 var prenom string
@@ -30,6 +31,7 @@ func ParseNginxHtmlList(r io.Reader) ([]FsObject) {
         if t.Data == "a" {
             fmt.Printf("link: %s ", getTokenAttr(&t, "href"))
             curObj.name = getTokenAttr(&t, "href")
+            curObj.name = strings.Trim(curObj.name, "/")
             curObj.otype = FS_NONE
             curObj.size = 0
         }
@@ -54,7 +56,7 @@ func ParseNginxHtmlList(r io.Reader) ([]FsObject) {
                     curObj.time = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
                 }
                 if match[2] == "-" {
-                    curObj.size = 0
+                    curObj.size = 4096 /* XXX fake size */
                     curObj.otype = FS_DIR
                 } else {
                     floatSize, err := strconv.ParseFloat((match[2]), 64)
