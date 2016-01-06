@@ -54,28 +54,34 @@ type Session struct {
     defaultDirParser parseindex.Parser  // Default parser
 }
 
-// Valid commands when not authenticated
-var noauthFuncs = map[string]func(session *Session, command Command) (bool) {
-    "FEAT": cmdFeat,
-    "USER": cmdUser,
-    "PASS": cmdPass,
-    "QUIT": cmdQuit,
-}
+var noauthFuncs map[string]func(session *Session, command Command) (bool)
+var authFuncs map[string]func(session *Session, command Command) (bool)
 
-// Valid commands when authenticated
-var authFuncs = map[string]func(session *Session, command Command) (bool) {
-    "FEAT": cmdFeat,
-    "USER": cmdUser,
-    "PASS": cmdPass,
-    "MODE": cmdMode,
-    "TYPE": cmdType,
-    "QUIT": cmdQuit,
-    "PASV": cmdPasv,
-    "RETR": cmdRetr,
-    "PWD":  cmdPwd,
-    "CWD":  cmdCwd,
-    "LIST": cmdList,
-    "MDTM": cmdMdtm,
+func init() {
+    // Valid commands when not authenticated
+    noauthFuncs = map[string]func(session *Session, command Command) (bool) {
+        "FEAT": cmdFeat,
+        "USER": cmdUser,
+        "PASS": cmdPass,
+        "QUIT": cmdQuit,
+    }
+
+    // Valid commands when authenticated
+    authFuncs = map[string]func(session *Session, command Command) (bool) {
+        "FEAT": cmdFeat,
+        "USER": cmdUser,
+        "PASS": cmdPass,
+        "MODE": cmdMode,
+        "TYPE": cmdType,
+        "QUIT": cmdQuit,
+        "PASV": cmdPasv,
+        "RETR": cmdRetr,
+        "PWD":  cmdPwd,
+        "CWD":  cmdCwd,
+        "HELP": cmdHelp,
+        "LIST": cmdList,
+        "MDTM": cmdMdtm,
+    }
 }
 
 var state State
@@ -141,19 +147,15 @@ func handleRequest(conn net.Conn) {
         command := parseCommand(&line)
         fmt.Printf("cmd: '%s' args: '%s'\n", command.Verb, command.Args)
         // TODO: Check is user is logged in, use a different map for logged in/not logged in
-        if command.Verb == "HELP" {
-             callBackRet = cmdHelp(&session, command)
+        if session.loggedIn != true {
+            cmdCallBack, exists = noauthFuncs[command.Verb]
         } else {
-             if session.loggedIn != true {
-                 cmdCallBack, exists = noauthFuncs[command.Verb]
-             } else {
-                 cmdCallBack, exists = authFuncs[command.Verb]
-             }
-             if exists == true {
-                 callBackRet = cmdCallBack(&session, command)
-             } else {
-                 callBackRet = cmdUnknown(&session)
-             }
+            cmdCallBack, exists = authFuncs[command.Verb]
+        }
+        if exists == true {
+            callBackRet = cmdCallBack(&session, command)
+        } else {
+            callBackRet = cmdUnknown(&session)
         }
         fmt.Println(callBackRet)
         // conn.Write([]byte(strRet + "\n"))
