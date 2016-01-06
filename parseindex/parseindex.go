@@ -26,16 +26,18 @@ func GenDirList(objects []FsObject) (string) {
     var listing string
     for _, object := range objects {
         var printTime string
+        var lineHdr string
         if(object.time.Year() < time.Now().Year()) {
-            printTime = object.time.Format("Jan _2 2006")
+            printTime = object.time.Format("Jan _2  2006")
         } else {
             printTime = object.time.Format(time.Stamp)
         }
         if object.otype == FS_DIR {
-            listing = fmt.Sprintf("%sdrwxr-xr-x 1 0 0 1 %s %s\r\n", listing, printTime, object.name)
-        } else if object.otype == FS_FILE {
-            listing = fmt.Sprintf("%s-rwxr-xr-x 1 0 0 %d %s %s\r\n", listing, object.size, printTime, object.name)
+            lineHdr = "d"
+        } else {
+            lineHdr = "-"
         }
+        listing = fmt.Sprintf("%s%srwxr-xr-x 1 ftp ftp %d %s %s\r\n", listing, lineHdr, object.size, printTime, object.name)
     }
     return listing
 }
@@ -87,7 +89,7 @@ func (p ParserConf) Parse(truc string) (string, bool) {
     var listing string
     for path, _  := range vhosts {
         // Generate fake timestamps for first-level directories (our list of vhosts)
-        listing = fmt.Sprintf("%sdrwxr-xr-x 1 0 0 1 %s %s\r\n", listing, time.Now().Format(time.Stamp), path)
+        listing = fmt.Sprintf("%sdrwxr-xr-x 1 ftp ftp 4096 %s %s\r\n", listing, time.Now().Format(time.Stamp), strings.Trim(path, "/"))
     }
     return listing, true
 }
