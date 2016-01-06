@@ -25,10 +25,14 @@ type FsObject struct {
 func GenDirList(objects []FsObject) (string) {
     var listing string
     for _, object := range objects {
-        printTime := object.time.Format(time.Stamp)
+        var printTime string
+        if(object.time.Year() < time.Now().Year()) {
+            printTime = object.time.Format("Jan _2 2006")
+        } else {
+            printTime = object.time.Format(time.Stamp)
+        }
         if object.otype == FS_DIR {
             listing = fmt.Sprintf("%sdrwxr-xr-x 1 0 0 1 %s %s\r\n", listing, printTime, object.name)
-
         } else if object.otype == FS_FILE {
             listing = fmt.Sprintf("%s-rwxr-xr-x 1 0 0 %d %s %s\r\n", listing, object.size, printTime, object.name)
         }
