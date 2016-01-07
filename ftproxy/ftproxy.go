@@ -331,13 +331,17 @@ func cmdPwd(session *Session, command Command) (bool) {
 
 func cmdCwd(session *Session, command Command) (bool) {
     // Needs at least a sanity check
-    // Needs to support relative paths
     newPath := command.Args
+
     if strings.HasPrefix(newPath, "/") {
-        session.workingDir = newPath
+        // Absolute path provided
+        newPath = strings.Trim(newPath, "/")
+        session.workingDir = fmt.Sprintf("/%s", newPath)
     } else {
-        if strings.HasSuffix(session.workingDir, "/") {
-            session.workingDir = fmt.Sprintf("%s%s", session.workingDir, newPath)
+        // Relative path provided
+        newPath = strings.Trim(newPath, "/")
+        if session.workingDir == "/" {
+            session.workingDir = fmt.Sprintf("/%s", newPath)
         } else {
             session.workingDir = fmt.Sprintf("%s/%s", session.workingDir, newPath)
         }
