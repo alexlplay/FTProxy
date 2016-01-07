@@ -139,17 +139,25 @@ func handleRequest(conn net.Conn) {
         var callBackRet bool
         command := parseCommand(&line)
         fmt.Printf("cmd: '%s' args: '%s'\n", command.Verb, command.Args)
-        // TODO: Check is user is logged in, use a different map for logged in/not logged in
         if session.loggedIn != true {
             cmdCallBack, exists = noauthFuncs[command.Verb]
-        } else
-        {
-            cmdCallBack, exists = authFuncs[command.Verb]
-        }
-        if exists == true {
-            callBackRet = cmdCallBack(&session, command)
+            if exists == true {
+                callBackRet = cmdCallBack(&session, command)
+            } else {
+                _, exists = authFuncs[command.Verb]
+                if exists == true {
+                    callBackRet = cmdLoginFirst(&session)
+                } else {
+                    callBackRet = cmdUnknown(&session)
+                }
+            }
         } else {
-            callBackRet = cmdUnknown(&session)
+            cmdCallBack, exists = authFuncs[command.Verb]
+            if exists == true {
+                callBackRet = cmdCallBack(&session, command)
+            } else {
+                callBackRet = cmdUnknown(&session)
+            }
         }
         fmt.Println(callBackRet)
         // conn.Write([]byte(strRet + "\n"))
@@ -191,7 +199,7 @@ func cmdUser(session *Session, command Command) (bool) {
 
 func cmdPass(session *Session, command Command) (bool) {
     if session.username == "" {
-        ftpcmd.Write(session.commandConn, 503, "Login with USER first.")
+        cmdLoginFirst(session)
         return true
     }
     if session.loggedIn == true {
@@ -238,6 +246,11 @@ func cmdQuit(session *Session, command Command) (bool) {
     state.connectionCount--
     state.Unlock()
     return true
+}
+
+func cmdLoginFirst(session *Session) (bool) {
+    ftpcmd.Write(session.commandConn, 503, "Login with USER first.")
+    return false
 }
 
 func cmdUnknown(session *Session) (bool) {
