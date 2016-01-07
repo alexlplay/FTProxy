@@ -100,6 +100,7 @@ func main() {
 func handleRequest(conn net.Conn) {
     // Valid commands when not authenticated
     noauthFuncs := map[string]func(session *Session, command Command) (bool) {
+        "FEAT": cmdFeat,
         "USER": cmdUser,
         "PASS": cmdPass,
         "QUIT": cmdQuit,
@@ -107,6 +108,7 @@ func handleRequest(conn net.Conn) {
 
     // Valid commands when authenticated
     authFuncs := map[string]func(session *Session, command Command) (bool) {
+        "FEAT": cmdFeat,
         "USER": cmdUser,
         "PASS": cmdPass,
         "MODE": cmdMode,
@@ -117,7 +119,6 @@ func handleRequest(conn net.Conn) {
         "PWD":  cmdPwd,
         "CWD":  cmdCwd,
         "LIST": cmdList,
-        "FEAT": cmdFeat,
         "MDTM": cmdMdtm,
     }
 
