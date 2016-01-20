@@ -53,7 +53,7 @@ func getTokenAttr(tok *html.Token, attrName string) (string) {
 
 type Parser interface {
     Parse(path string) (string, bool)
-    Mdtm(dirPath string, fileName string) (string, bool)
+    SimpleStat(dirPath string, fileName string) (int64, string, bool)
 }
 
 type ParserAutoIndex struct {
@@ -96,16 +96,16 @@ func (p ParserConf) Parse(truc string) (string, bool) {
 
 /* As with DIR, this assumes we look for a file in the current directory(dirPath).
    fileName must be a single file name. Proper directory handling TBD */
-func (p ParserAutoIndex) Mdtm(dirPath string, fileName string) (string, bool) {
+func (p ParserAutoIndex) SimpleStat(dirPath string, fileName string) (int64, string, bool) {
     /* Whole section below similar to Parse(), factor it in a separate function */
     cfg.LoadConfig("ftproxy.conf")
-    fmt.Printf("MDTM for file: -%s-\n", fileName)
+    fmt.Printf("SimpleStat stat for file: -%s-\n", fileName)
     vhost := cfg.GetVhost(dirPath)
     url := fmt.Sprintf("http://%s/%s/", vhost, dirPath)
     fmt.Printf("URL FOR INDEX: %s\n", url)
     resp, err := http.Get(url)
     if err != nil {
-        return "", false
+        return 0, "", false
     }
     defer resp.Body.Close()
     var objects []FsObject
@@ -118,14 +118,13 @@ func (p ParserAutoIndex) Mdtm(dirPath string, fileName string) (string, bool) {
     /* End section*/
     for _, object := range objects {
         if object.name == fileName && object.otype == FS_FILE {
-            fmt.Printf("Found file, time is: %s\n", object.time)
-            mdtmTime := object.time.Format("20060102030405")
-            return mdtmTime, true
+            fmt.Printf("Found file, size is: %d, time is: %s\n", object.size, object.time)
+            return object.size, object.time.Format("20060102030405"), true
         }
     }
-    return "", false
+    return 0, "", false
 }
 
-func (p ParserConf) Mdtm(dirPath string, fileName string) (string, bool) {
-    return "", false
+func (p ParserConf) SimpleStat(dirPath string, fileName string) (int64, string, bool) {
+    return 0, "", false
 }
