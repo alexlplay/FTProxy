@@ -13,6 +13,7 @@ import (
     "time"
     "cfg"
     "sync"
+    "strconv"
 )
 
 const (
@@ -120,6 +121,7 @@ func handleRequest(conn net.Conn) {
         "CWD":  cmdCwd,
         "LIST": cmdList,
         "MDTM": cmdMdtm,
+        "SIZE": cmdSize,
     }
 
     scanner := bufio.NewScanner(conn)
@@ -452,10 +454,10 @@ func cmdMdtm(session *Session, command Command) (bool) {
     var ret bool
     if session.workingDir == "/" {
         fmt.Println("Mdtm (top dir parser)")
-        fileTime, ret = session.topDirParser.Mdtm(session.workingDir, fileName)
+        _, fileTime, ret = session.topDirParser.SimpleStat(session.workingDir, fileName)
     } else {
         fmt.Println("Mdtm (default parser)")
-        fileTime, ret = session.defaultDirParser.Mdtm(session.workingDir, fileName)
+        _, fileTime, ret = session.defaultDirParser.SimpleStat(session.workingDir, fileName)
     }
     if ret != true {
         ftpcmd.Write(session.commandConn, 550, "Could not get file modification time.")
@@ -463,6 +465,27 @@ func cmdMdtm(session *Session, command Command) (bool) {
     }
 
     ftpcmd.Write(session.commandConn, 213, fileTime)
+
+    return true
+}
+
+func cmdSize(session *Session, command Command) (bool) {
+    fileName := command.Args
+    var fileSize int64
+    var ret bool
+    if session.workingDir == "/" {
+        fmt.Println("Size (top dir parser)")
+        fileSize, _, ret = session.topDirParser.SimpleStat(session.workingDir, fileName)
+    } else {
+        fmt.Println("Size (default parser)")
+        fileSize, _, ret = session.defaultDirParser.SimpleStat(session.workingDir, fileName)
+    }
+    if ret != true {
+        ftpcmd.Write(session.commandConn, 550, "Could not get file size.")
+        return false
+    }
+
+    ftpcmd.Write(session.commandConn, 213, strconv.FormatInt(fileSize, 10))
 
     return true
 }
