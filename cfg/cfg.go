@@ -39,6 +39,7 @@ func GetVhost(path string) (string) {
             return vhost.(string)
         }
     }
+    //fmt.Printf("WARNING! No vhost found for path: %s, using default vhost\n", path)
     return conf.DefaultVhost
 }
 
