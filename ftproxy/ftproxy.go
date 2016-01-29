@@ -326,9 +326,13 @@ func cmdRetr(session *Session, command Command) (bool) {
     if strings.HasPrefix(command.Args, "/") {
         filePath = command.Args
     } else {
-        filePath = fmt.Sprintf("%s/%s", session.workingDir, command.Args)
+        if strings.HasSuffix(session.workingDir, "/") {
+            filePath = fmt.Sprintf("%s%s", session.workingDir, command.Args)
+        } else {
+            filePath = fmt.Sprintf("%s/%s", session.workingDir, command.Args)
+        }
     }
-    vhost := cfg.GetVhost(session.workingDir)
+    vhost := cfg.GetVhost(filePath)
     ret := ftpdata.SendFile(session.dataConn, vhost, filePath)
     if ret != true {
         ftpcmd.Write(session.commandConn, 526, "Transfer failed.")
