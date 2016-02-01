@@ -165,6 +165,17 @@ func handleRequest(conn net.Conn) {
         fmt.Println(callBackRet)
         // conn.Write([]byte(strRet + "\n"))
     }
+
+    /* XXX 'QUIT' command and timer force the previous loop to exit
+       with a 'use of closed network connection' error ;
+       the following tests for a TCP-level disconnection */
+    if scanner.Err() == nil {
+        session.timer.Stop()
+        ftpcmd.Close(conn)
+        state.Lock()
+        state.connectionCount--
+        state.Unlock()
+    }
 }
 
 func parseCommand(line *string) (Command) {
