@@ -9,6 +9,7 @@ import (
     "ftpcmd"
     "ftpdata"
     "parseindex"
+    "path"
     // "net/http"
     "time"
     "cfg"
@@ -368,6 +369,13 @@ func cmdRetr(session *Session, command Command) (bool) {
         return false
     }
 
+    fileName := command.Args
+
+    if !strings.HasPrefix(fileName, "/") {
+        fileName = session.workingDir + "/" + fileName
+    }
+    fileName = path.Clean(fileName)
+
     // Assume passive session from here
     conn, err := session.pasvListener.AcceptTCP()
     if err != nil {
@@ -387,19 +395,10 @@ func cmdRetr(session *Session, command Command) (bool) {
     session.dtpState = DTP_NONE
 
     ftpcmd.Write(session.commandConn, 150, "Opening BINARY mode data connection for x.")
-    // Sanity check and space support with quotes
-    filePath := ""
-    if strings.HasPrefix(command.Args, "/") {
-        filePath = command.Args
-    } else {
-        if strings.HasSuffix(session.workingDir, "/") {
-            filePath = fmt.Sprintf("%s%s", session.workingDir, command.Args)
-        } else {
-            filePath = fmt.Sprintf("%s/%s", session.workingDir, command.Args)
-        }
-    }
-    vhost := cfg.GetVhost(filePath)
-    ret := ftpdata.SendFile(session.dataConn, vhost, filePath)
+
+    vhost := cfg.GetVhost(fileName)
+
+    ret := ftpdata.SendFile(session.dataConn, vhost, fileName)
     if ret != true {
         ftpcmd.Write(session.commandConn, 526, "Transfer failed.")
         ftpdata.Close(session.dataConn)
@@ -416,22 +415,13 @@ func cmdPwd(session *Session, command Command) (bool) {
 }
 
 func cmdCwd(session *Session, command Command) (bool) {
-    // Needs at least a sanity check
     newPath := command.Args
-
-    if strings.HasPrefix(newPath, "/") {
-        // Absolute path provided
-        newPath = strings.Trim(newPath, "/")
-        session.workingDir = fmt.Sprintf("/%s", newPath)
-    } else {
-        // Relative path provided
-        newPath = strings.Trim(newPath, "/")
-        if session.workingDir == "/" {
-            session.workingDir = fmt.Sprintf("/%s", newPath)
-        } else {
-            session.workingDir = fmt.Sprintf("%s/%s", session.workingDir, newPath)
-        }
+    
+    if !strings.HasPrefix(newPath, "/") {
+        newPath = session.workingDir + "/" + newPath
     }
+    session.workingDir = path.Clean(newPath)
+
     ftpcmd.Write(session.commandConn, 250, "Directory successfully changed.")
     return true
 }
@@ -491,7 +481,13 @@ func cmdFeat(session *Session, command Command) (bool) {
 
 func cmdMdtm(session *Session, command Command) (bool) {
     fileName := command.Args
-    _, fileTime, ret := parseindex.FileStat(session.workingDir + "/" + fileName)
+
+    if !strings.HasPrefix(fileName, "/") {
+        fileName = session.workingDir + "/" + fileName
+    }
+    fileName = path.Clean(fileName)
+
+    _, fileTime, ret := parseindex.FileStat(fileName)
     if ret != true {
         ftpcmd.Write(session.commandConn, 550, "Could not get file modification time.")
         return false
@@ -504,7 +500,13 @@ func cmdMdtm(session *Session, command Command) (bool) {
 
 func cmdSize(session *Session, command Command) (bool) {
     fileName := command.Args
-    fileSize, _, ret := parseindex.FileStat(session.workingDir + "/" + fileName)
+
+    if !strings.HasPrefix(fileName, "/") {
+        fileName = session.workingDir + "/" + fileName
+    }
+    fileName = path.Clean(fileName)
+
+    fileSize, _, ret := parseindex.FileStat(fileName)
     if ret != true {
         ftpcmd.Write(session.commandConn, 550, "Could not get file size.")
         return false
