@@ -115,6 +115,7 @@ func handleRequest(conn net.Conn) {
         "TYPE": cmdType,
         "QUIT": cmdQuit,
         "PASV": cmdPasv,
+        "EPSV": cmdEpsv,
         "RETR": cmdRetr,
         "PWD":  cmdPwd,
         "CWD":  cmdCwd,
@@ -309,10 +310,48 @@ func cmdPasv(session *Session, command Command) (bool) {
     session.dtpState = DTP_PASSIVE
     session.pasvListener = ln
 
+    /* We are listening on both IPv4 and IPv6, adapt answer given the current *command* protocol */
+    ip := session.commandConn.LocalAddr().(*net.TCPAddr).IP.To4()
+    port := ln.Addr().(*net.TCPAddr).Port
+
+    var reply string
+    if ip == nil {
+        /* IPv6, return 0.0.0.0 as IPv4 addr */
+        reply = fmt.Sprintf("Entering Passive Mode (0,0,0,0,%d,%d).", port >> 8, port & 0xFF)
+    } else {
+        /* IPv4, return real address */
+        reply = fmt.Sprintf("Entering Passive Mode (%d,%d,%d,%d,%d,%d).", ip[0], ip[1], ip[2], ip[3], port >> 8, port & 0xFF)
+    }
+    ftpcmd.Write(session.commandConn, 227, reply)
+    fmt.Printf("%s\n", reply)
+
+    return true
+}
+
+func cmdEpsv(session *Session, command Command) (bool) {
+    laddr, err := net.ResolveTCPAddr("tcp", CONN_HOST + ":0")
+    if err != nil {
+        fmt.Println(err)
+        ftpcmd.Write(session.commandConn, 500,  "EPSV failed.")
+        return false
+    }
+    ln, err := net.ListenTCP("tcp", laddr)
+    if err != nil {
+        fmt.Println(err)
+        ftpcmd.Write(session.commandConn, 500,  "EPSV failed.")
+        return false
+    }
+    if session.pasvListener != nil {
+        ftpcmd.Write(session.commandConn, 526,  "Already listening.")
+        return false
+    }
+    session.dtpState = DTP_PASSIVE
+    session.pasvListener = ln
+
     port := ln.Addr().(*net.TCPAddr).Port
     fmt.Printf("Listening on IP: 0.0.0.0 port: %d\n", port)
-    reply := fmt.Sprintf("Entering Passive Mode (0,0,0,0,%d,%d).", port >> 8, port & 0xFF)
-    ftpcmd.Write(session.commandConn,  227, reply)
+    reply := fmt.Sprintf("Entering Extended Passive Mode (|||%d|).", port)
+    ftpcmd.Write(session.commandConn, 229, reply)
 
     return true
 }
