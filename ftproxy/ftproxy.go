@@ -50,14 +50,12 @@ type Session struct {
     pasvListener *net.TCPListener   // Listener in PASV mode
     workingDir string
     timer *time.Timer
-    topDirParser parseindex.Parser     // Parser to generate top level LIST
-    defaultDirParser parseindex.Parser  // Default parser
 }
 
 var state State
 
 func main() {
-    // Load config (todo, try to use memoization in cfg.go)
+    // Load config (todo, try to use memorization in cfg.go)
     cfg.LoadConfig("ftproxy.conf")
     listenPort := cfg.GetListenPort()
     maxConnections := cfg.GetMaxConnections()
@@ -125,7 +123,7 @@ func handleRequest(conn net.Conn) {
     }
 
     scanner := bufio.NewScanner(conn)
-    session := Session{commandConn: conn, workingDir: "/", topDirParser: new(parseindex.ParserConf), defaultDirParser: new(parseindex.ParserAutoIndex)}
+    session := Session{commandConn: conn, workingDir: "/"}
     var cmdCallBack func(session *Session, command Command) (bool)
     var exists bool
 
@@ -137,11 +135,13 @@ func handleRequest(conn net.Conn) {
     for scanner.Scan() {
         session.timer.Reset(time.Second * 60 * 3)
         // Should have a limit on line length
+        fmt.Printf("----\n")
+        fmt.Printf("Session: ")
         fmt.Println(session)
         line := scanner.Text()
         var callBackRet bool
         command := parseCommand(&line)
-        fmt.Printf("cmd: '%s' args: '%s'\n", command.Verb, command.Args)
+        fmt.Printf("=> cmd: '%s', args: '%s'\n", command.Verb, command.Args)
         if session.loggedIn != true {
             cmdCallBack, exists = noauthFuncs[command.Verb]
             if exists == true {
@@ -162,6 +162,7 @@ func handleRequest(conn net.Conn) {
                 callBackRet = cmdUnknown(&session)
             }
         }
+        fmt.Printf("<= Returns: ")
         fmt.Println(callBackRet)
         // conn.Write([]byte(strRet + "\n"))
     }
@@ -468,43 +469,14 @@ func cmdList(session *Session, command Command) (bool) {
 
     ftpcmd.Write(session.commandConn, 150, "Opening BINARY mode data connection for x.")
 
-    // Sending list.txt works, next two lines
-    // listFile := fmt.Sprintf("%s/%s", session.workingDir, "list.txt")
-    // ftpdata.SendFile(session.dataConn, listFile)
-
-    var listing string
-    var ret bool
-    if session.workingDir == "/" {
-        fmt.Println("CALLING TOP DIR PARSER")
-        listing, ret = session.topDirParser.Parse(session.workingDir)
-    } else {
-        fmt.Println("CALLING DEFAULT DIR PARSER")
-        listing, ret = session.defaultDirParser.Parse(session.workingDir)
-    }
+    listing, ret := parseindex.DirList(session.workingDir)
     if ret != true {
         ftpcmd.Write(session.commandConn, 526, "Failed to send directory, please retry.")
         return false
     }
-
-    // Attempt to use autoindex --start
-    /* vhost := cfg.GetVhost(session.workingDir)
-    url := fmt.Sprintf("http://%s/%s/", vhost, session.workingDir)
-    fmt.Printf("LIST for url: %s\n", url)
-    resp, err := http.Get(url)
-    if err != nil {
-        fmt.Println("Error trying to GET current directory (for LIST):", err.Error())
-        ftpcmd.Write(session.commandConn, 526, "Failed to send directory, please retry.")
-        return false
-    }
-    defer resp.Body.Close()
-    objects := parseindex.ParseHtmlList(resp.Body)
-    fmt.Printf("Directory objects: %d\n", len(objects))
-    listing := parseindex.GenDirList(objects)
-    */
     ftpdata.SendString(session.dataConn, listing)
-    // Attempt to use autoindex --end
-
     ftpdata.Close(session.dataConn)
+
     ftpcmd.Write(session.commandConn, 226, "Directory send OK.")
 
     return true
@@ -519,15 +491,7 @@ func cmdFeat(session *Session, command Command) (bool) {
 
 func cmdMdtm(session *Session, command Command) (bool) {
     fileName := command.Args
-    var fileTime string
-    var ret bool
-    if session.workingDir == "/" {
-        fmt.Println("Mdtm (top dir parser)")
-        _, fileTime, ret = session.topDirParser.SimpleStat(session.workingDir, fileName)
-    } else {
-        fmt.Println("Mdtm (default parser)")
-        _, fileTime, ret = session.defaultDirParser.SimpleStat(session.workingDir, fileName)
-    }
+    _, fileTime, ret := parseindex.FileStat(session.workingDir + "/" + fileName)
     if ret != true {
         ftpcmd.Write(session.commandConn, 550, "Could not get file modification time.")
         return false
@@ -540,15 +504,7 @@ func cmdMdtm(session *Session, command Command) (bool) {
 
 func cmdSize(session *Session, command Command) (bool) {
     fileName := command.Args
-    var fileSize int64
-    var ret bool
-    if session.workingDir == "/" {
-        fmt.Println("Size (top dir parser)")
-        fileSize, _, ret = session.topDirParser.SimpleStat(session.workingDir, fileName)
-    } else {
-        fmt.Println("Size (default parser)")
-        fileSize, _, ret = session.defaultDirParser.SimpleStat(session.workingDir, fileName)
-    }
+    fileSize, _, ret := parseindex.FileStat(session.workingDir + "/" + fileName)
     if ret != true {
         ftpcmd.Write(session.commandConn, 550, "Could not get file size.")
         return false
