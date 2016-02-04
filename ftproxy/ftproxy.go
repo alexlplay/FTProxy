@@ -175,6 +175,12 @@ func handleRequest(conn net.Conn) {
         state.Lock()
         state.connectionCount--
         state.Unlock()
+
+        if session.pasvListener != nil {
+            session.pasvListener.Close()
+            session.pasvListener = nil
+            session.dtpState = DTP_NONE
+        }
     }
 }
 
@@ -193,6 +199,12 @@ func ctrlTimeout(session *Session) (bool) {
     state.Lock()
     state.connectionCount--
     state.Unlock()
+
+    if session.pasvListener != nil {
+        session.pasvListener.Close()
+        session.pasvListener = nil
+        session.dtpState = DTP_NONE
+    }
     return true
 }
 
@@ -259,6 +271,12 @@ func cmdQuit(session *Session, command Command) (bool) {
     state.Lock()
     state.connectionCount--
     state.Unlock()
+
+    if session.pasvListener != nil {
+        session.pasvListener.Close()
+        session.pasvListener = nil
+        session.dtpState = DTP_NONE
+    }
     return true
 }
 
