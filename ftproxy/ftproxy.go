@@ -17,8 +17,7 @@ import (
 )
 
 const (
-    CONN_HOST = "0"
-    CONN_PORT = "3333"
+    CONN_HOST = ""
     CONN_TYPE = "tcp"
 )
 
@@ -63,14 +62,14 @@ func main() {
     listenPort := cfg.GetListenPort()
     maxConnections := cfg.GetMaxConnections()
     // Listen for incoming connections.
-    l, err := net.Listen(CONN_TYPE, CONN_HOST+":"+listenPort)
+    l, err := net.Listen(CONN_TYPE, CONN_HOST + ":" + listenPort)
     if err != nil {
         fmt.Println("Error listening:", err.Error())
         os.Exit(1)
     }
     // Close the listener when the application closes.
     defer l.Close()
-    fmt.Println("Listening on " + CONN_HOST + ":" + CONN_PORT)
+    fmt.Println("Listening on " + CONN_HOST + ":" + listenPort)
     for {
         // Listen for an incoming connection.
         conn, err := l.Accept()
@@ -291,13 +290,13 @@ func cmdUnknown(session *Session) (bool) {
 }
 
 func cmdPasv(session *Session, command Command) (bool) {
-    addr := session.commandConn.LocalAddr()
-    fmt.Println(addr)
-    test := addr.(*net.TCPAddr).IP
-    fmt.Println(test)
-    // laddr := net.TCPAddr{IP: net.IPv4(51, 255, 255, 51), Port: 0}
-    laddr := net.TCPAddr{IP: session.commandConn.LocalAddr().(*net.TCPAddr).IP, Port: 0}
-    ln, err := net.ListenTCP("tcp4", &laddr)
+    laddr, err := net.ResolveTCPAddr("tcp", CONN_HOST + ":0")
+    if err != nil {
+        fmt.Println(err)
+        ftpcmd.Write(session.commandConn, 500,  "PASV failed.")
+        return false
+    }
+    ln, err := net.ListenTCP("tcp", laddr)
     if err != nil {
         fmt.Println(err)
         ftpcmd.Write(session.commandConn, 500,  "PASV failed.")
@@ -307,16 +306,14 @@ func cmdPasv(session *Session, command Command) (bool) {
         ftpcmd.Write(session.commandConn, 526,  "Already listening.")
         return false
     }
-    ip := ln.Addr().(*net.TCPAddr).IP
-    port := ln.Addr().(*net.TCPAddr).Port
     session.dtpState = DTP_PASSIVE
     session.pasvListener = ln
-    fmt.Printf("Listening on IP: %s port: %d\n",ip , port)
-    // Format IP and port according to FTP spec (see RFC)
-    high := port >> 8
-    low := port & 0xFF
-    reply := fmt.Sprintf("Entering Passive Mode (%d,%d,%d,%d,%d,%d).", ip[0], ip[1], ip[2], ip[3], high, low)
+
+    port := ln.Addr().(*net.TCPAddr).Port
+    fmt.Printf("Listening on IP: 0.0.0.0 port: %d\n", port)
+    reply := fmt.Sprintf("Entering Passive Mode (0,0,0,0,%d,%d).", port >> 8, port & 0xFF)
     ftpcmd.Write(session.commandConn,  227, reply)
+
     return true
 }
 
