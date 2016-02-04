@@ -10,7 +10,7 @@ import (
     "ftpdata"
     "parseindex"
     "path"
-    // "net/http"
+    "net/http"
     "time"
     "cfg"
     "sync"
@@ -375,6 +375,19 @@ func cmdRetr(session *Session, command Command) (bool) {
         fileName = session.workingDir + "/" + fileName
     }
     fileName = path.Clean(fileName)
+    vhost := cfg.GetVhost(fileName)
+
+    // Check if URL is accessible
+    var resp *http.Response
+    ret := ftpdata.OpenUrl(vhost, fileName, &resp)
+    if ret != true {
+        // make sure ln is destroyed
+        session.pasvListener.Close()
+        session.pasvListener = nil
+        session.dtpState = DTP_NONE
+        ftpcmd.Write(session.commandConn, 550, "Failed to open file.")
+        return false
+    }
 
     // Assume passive session from here
     conn, err := session.pasvListener.AcceptTCP()
@@ -384,6 +397,7 @@ func cmdRetr(session *Session, command Command) (bool) {
         session.pasvListener.Close()
         session.pasvListener = nil
         session.dtpState = DTP_NONE
+        ftpdata.CloseUrl(resp)
         ftpcmd.Write(session.commandConn, 500, "Failed to accept data connection.")
         return false
     }
@@ -396,16 +410,15 @@ func cmdRetr(session *Session, command Command) (bool) {
 
     ftpcmd.Write(session.commandConn, 150, "Opening BINARY mode data connection for x.")
 
-    vhost := cfg.GetVhost(fileName)
-
-    ret := ftpdata.SendFile(session.dataConn, vhost, fileName)
-    if ret != true {
-        ftpcmd.Write(session.commandConn, 526, "Transfer failed.")
-        ftpdata.Close(session.dataConn)
-    }
+    ret = ftpdata.SendUrl(session.dataConn, resp)
+    ftpdata.CloseUrl(resp)
     ftpdata.Close(session.dataConn)
-    ftpcmd.Write(session.commandConn, 226, "Transfer complete.")
 
+    if ret != true {
+        ftpcmd.Write(session.commandConn, 550, "Failed to open file.")
+        return false
+    }
+    ftpcmd.Write(session.commandConn, 226, "Transfer complete.")
     return true
 }
 
