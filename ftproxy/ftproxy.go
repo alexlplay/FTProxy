@@ -325,7 +325,7 @@ func cmdPasv(session *Session, command Command) (bool) {
         reply = fmt.Sprintf("Entering Passive Mode (%d,%d,%d,%d,%d,%d).", ip[0], ip[1], ip[2], ip[3], port >> 8, port & 0xFF)
     }
     ftpcmd.Write(session.commandConn, 227, reply)
-    fmt.Printf("%s\n", reply)
+    fmt.Printf("cmdPasv(): listening on port: %d\n", port)
 
     return true
 }
@@ -351,9 +351,9 @@ func cmdEpsv(session *Session, command Command) (bool) {
     session.pasvListener = ln
 
     port := ln.Addr().(*net.TCPAddr).Port
-    fmt.Printf("Listening on IP: 0.0.0.0 port: %d\n", port)
     reply := fmt.Sprintf("Entering Extended Passive Mode (|||%d|).", port)
     ftpcmd.Write(session.commandConn, 229, reply)
+    fmt.Printf("cmdEpsv(): listening on port: %d\n", port)
 
     return true
 }
@@ -427,7 +427,6 @@ func cmdCwd(session *Session, command Command) (bool) {
 }
 
 func cmdList(session *Session, command Command) (bool) {
-    fmt.Println("BEGIN CMDLIST")
     if session.dtpState == DTP_NONE {
         ftpcmd.Write(session.commandConn, 425, "Use PORT or PASV first.")
         return false
@@ -437,6 +436,13 @@ func cmdList(session *Session, command Command) (bool) {
         ftpcmd.Write(session.commandConn, 425, "Only PASV implemented")
         return false
     }
+
+    dirName := command.Args
+
+    if !strings.HasPrefix(dirName, "/") {
+        dirName = session.workingDir + "/" + dirName
+    }
+    dirName = path.Clean(dirName)
 
     // Assume passive session from here
     // Same code as in RETR, factor it in AcceptAndClose()
@@ -459,7 +465,7 @@ func cmdList(session *Session, command Command) (bool) {
 
     ftpcmd.Write(session.commandConn, 150, "Opening BINARY mode data connection for x.")
 
-    listing, ret := parseindex.DirList(session.workingDir)
+    listing, ret := parseindex.DirList(dirName)
     if ret != true {
         ftpcmd.Write(session.commandConn, 526, "Failed to send directory, please retry.")
         return false
