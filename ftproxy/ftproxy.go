@@ -45,7 +45,7 @@ type Session struct {
     username string
     loggedIn bool
     commandConn net.Conn            // Command connection
-    dataConn net.Conn               // Command connection
+    dataConn net.Conn               // Data connection
     dtpState DtpState
     pasvListener *net.TCPListener   // Listener in PASV mode
     workingDir string
@@ -149,9 +149,9 @@ func handleRequest(conn net.Conn) {
             } else {
                 _, exists = authFuncs[command.Verb]
                 if exists == true {
-                    callBackRet = cmdLoginFirst(&session)
+                    callBackRet = msgLoginFirst(&session)
                 } else {
-                    callBackRet = cmdUnknown(&session)
+                    callBackRet = msgUnknown(&session)
                 }
             }
         } else {
@@ -159,7 +159,7 @@ func handleRequest(conn net.Conn) {
             if exists == true {
                 callBackRet = cmdCallBack(&session, command)
             } else {
-                callBackRet = cmdUnknown(&session)
+                callBackRet = msgUnknown(&session)
             }
         }
         fmt.Printf("<= Returns: ")
@@ -209,6 +209,16 @@ func ctrlTimeout(session *Session) (bool) {
     return true
 }
 
+func msgLoginFirst(session *Session) (bool) {
+    ftpIO.Write(session.commandConn, 503, "Login with USER first.")
+    return false
+}
+
+func msgUnknown(session *Session) (bool) {
+    ftpIO.Write(session.commandConn, 500, "Unknown command.")
+    return false
+}
+
 func cmdUser(session *Session, command Command) (bool) {
     if session.loggedIn == true {
         ftpIO.Write(session.commandConn, 530, "Already logged-in.")
@@ -226,7 +236,7 @@ func cmdUser(session *Session, command Command) (bool) {
 
 func cmdPass(session *Session, command Command) (bool) {
     if session.username == "" {
-        cmdLoginFirst(session)
+        msgLoginFirst(session)
         return true
     }
     if session.loggedIn == true {
@@ -279,16 +289,6 @@ func cmdQuit(session *Session, command Command) (bool) {
         session.dtpState = DTP_NONE
     }
     return true
-}
-
-func cmdLoginFirst(session *Session) (bool) {
-    ftpIO.Write(session.commandConn, 503, "Login with USER first.")
-    return false
-}
-
-func cmdUnknown(session *Session) (bool) {
-    ftpIO.Write(session.commandConn, 500, "Unknown command.")
-    return false
 }
 
 func cmdPasv(session *Session, command Command) (bool) {
