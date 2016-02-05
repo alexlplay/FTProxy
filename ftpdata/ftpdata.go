@@ -32,7 +32,7 @@ func OpenUrl(httpIp string, filePath string, resp **http.Response) (bool) {
         return false
     }
 
-    url := fmt.Sprintf("http://%s/%s", httpIp, filePath)
+    url := fmt.Sprintf("http://%s%s", httpIp, filePath)
     fmt.Printf("Opening url: %s\n", url)
 
     var err error
