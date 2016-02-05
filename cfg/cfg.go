@@ -35,11 +35,11 @@ func LoadConfig(filePath string) {
 // Return the vhost for the given path (either dir or file)
 func GetVhost(path string) (string) {
     for pathPrefix, vhost := range conf.Vhosts {
-        if strings.HasPrefix(path, pathPrefix) {
+        if strings.HasPrefix(path + "/", pathPrefix + "/") {
             return vhost.(string)
         }
     }
-    //fmt.Printf("WARNING! No vhost found for path: %s, using default vhost\n", path)
+    fmt.Printf("WARNING! No vhost found for path: %s, using default vhost\n", path)
     return conf.DefaultVhost
 }
 

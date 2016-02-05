@@ -6,10 +6,10 @@ import (
     "os"
     "bufio"
     "strings"
-    "ftpcmd"
-    "ftpdata"
+    "ftpIO"
     "parseindex"
-    // "net/http"
+    "path"
+    "net/http"
     "time"
     "cfg"
     "sync"
@@ -17,8 +17,7 @@ import (
 )
 
 const (
-    CONN_HOST = "0"
-    CONN_PORT = "3333"
+    CONN_HOST = ""
     CONN_TYPE = "tcp"
 )
 
@@ -46,31 +45,29 @@ type Session struct {
     username string
     loggedIn bool
     commandConn net.Conn            // Command connection
-    dataConn net.Conn               // Command connection
+    dataConn net.Conn               // Data connection
     dtpState DtpState
     pasvListener *net.TCPListener   // Listener in PASV mode
     workingDir string
     timer *time.Timer
-    topDirParser parseindex.Parser     // Parser to generate top level LIST
-    defaultDirParser parseindex.Parser  // Default parser
 }
 
 var state State
 
 func main() {
-    // Load config (todo, try to use memoization in cfg.go)
+    // Load config (todo, try to use memorization in cfg.go)
     cfg.LoadConfig("ftproxy.conf")
     listenPort := cfg.GetListenPort()
     maxConnections := cfg.GetMaxConnections()
     // Listen for incoming connections.
-    l, err := net.Listen(CONN_TYPE, CONN_HOST+":"+listenPort)
+    l, err := net.Listen(CONN_TYPE, CONN_HOST + ":" + listenPort)
     if err != nil {
         fmt.Println("Error listening:", err.Error())
         os.Exit(1)
     }
     // Close the listener when the application closes.
     defer l.Close()
-    fmt.Println("Listening on " + CONN_HOST + ":" + CONN_PORT)
+    fmt.Println("Listening on " + CONN_HOST + ":" + listenPort)
     for {
         // Listen for an incoming connection.
         conn, err := l.Accept()
@@ -82,8 +79,8 @@ func main() {
         connCount := state.connectionCount
         state.RUnlock()
         if connCount > (maxConnections - 1) {
-            ftpcmd.Write(conn, 421, "Too many connections.")
-            ftpcmd.Close(conn)
+            ftpIO.Write(conn, 421, "Too many connections.")
+            ftpIO.Close(conn)
             fmt.Printf("Too many connections (%d) connection closed\n", state.connectionCount)
         }
         fmt.Printf("Connections: %d\n", connCount+1)
@@ -116,32 +113,35 @@ func handleRequest(conn net.Conn) {
         "TYPE": cmdType,
         "QUIT": cmdQuit,
         "PASV": cmdPasv,
+        "EPSV": cmdEpsv,
         "RETR": cmdRetr,
         "PWD":  cmdPwd,
         "CWD":  cmdCwd,
         "LIST": cmdList,
         "MDTM": cmdMdtm,
         "SIZE": cmdSize,
+        "SYST": cmdSyst,
     }
 
     scanner := bufio.NewScanner(conn)
-    session := Session{commandConn: conn, workingDir: "/", topDirParser: new(parseindex.ParserConf), defaultDirParser: new(parseindex.ParserAutoIndex)}
+    session := Session{commandConn: conn, workingDir: "/"}
     var cmdCallBack func(session *Session, command Command) (bool)
     var exists bool
 
-
-    conn.Write([]byte("220 (FTProxy)\n"))
+    ftpIO.Write(session.commandConn, 220, "(FTProxy)")
     session.timer = time.NewTimer(time.Second * 60)
     go ctrlTimeout(&session)
 
     for scanner.Scan() {
         session.timer.Reset(time.Second * 60 * 3)
         // Should have a limit on line length
+        fmt.Printf("----\n")
+        fmt.Printf("Session: ")
         fmt.Println(session)
         line := scanner.Text()
         var callBackRet bool
         command := parseCommand(&line)
-        fmt.Printf("cmd: '%s' args: '%s'\n", command.Verb, command.Args)
+        fmt.Printf("=> cmd: '%s', args: '%s'\n", command.Verb, command.Args)
         if session.loggedIn != true {
             cmdCallBack, exists = noauthFuncs[command.Verb]
             if exists == true {
@@ -149,9 +149,9 @@ func handleRequest(conn net.Conn) {
             } else {
                 _, exists = authFuncs[command.Verb]
                 if exists == true {
-                    callBackRet = cmdLoginFirst(&session)
+                    callBackRet = msgLoginFirst(&session)
                 } else {
-                    callBackRet = cmdUnknown(&session)
+                    callBackRet = msgUnknown(&session)
                 }
             }
         } else {
@@ -159,9 +159,10 @@ func handleRequest(conn net.Conn) {
             if exists == true {
                 callBackRet = cmdCallBack(&session, command)
             } else {
-                callBackRet = cmdUnknown(&session)
+                callBackRet = msgUnknown(&session)
             }
         }
+        fmt.Printf("<= Returns: ")
         fmt.Println(callBackRet)
         // conn.Write([]byte(strRet + "\n"))
     }
@@ -171,10 +172,16 @@ func handleRequest(conn net.Conn) {
        the following tests for a TCP-level disconnection */
     if scanner.Err() == nil {
         session.timer.Stop()
-        ftpcmd.Close(conn)
+        ftpIO.Close(conn)
         state.Lock()
         state.connectionCount--
         state.Unlock()
+
+        if session.pasvListener != nil {
+            session.pasvListener.Close()
+            session.pasvListener = nil
+            session.dtpState = DTP_NONE
+        }
     }
 }
 
@@ -189,23 +196,39 @@ func parseCommand(line *string) (Command) {
 
 func ctrlTimeout(session *Session) (bool) {
     <- session.timer.C
-    ftpcmd.Close(session.commandConn)
+    ftpIO.Close(session.commandConn)
     state.Lock()
     state.connectionCount--
     state.Unlock()
+
+    if session.pasvListener != nil {
+        session.pasvListener.Close()
+        session.pasvListener = nil
+        session.dtpState = DTP_NONE
+    }
     return true
+}
+
+func msgLoginFirst(session *Session) (bool) {
+    ftpIO.Write(session.commandConn, 503, "Login with USER first.")
+    return false
+}
+
+func msgUnknown(session *Session) (bool) {
+    ftpIO.Write(session.commandConn, 500, "Unknown command.")
+    return false
 }
 
 func cmdUser(session *Session, command Command) (bool) {
     if session.loggedIn == true {
-        ftpcmd.Write(session.commandConn, 530, "Already logged-in.")
+        ftpIO.Write(session.commandConn, 530, "Already logged-in.")
         return true
     }
     username := command.Args
     fmt.Printf("Handling USER command, username: '%s'\n", username)
     if len(username) > 0 {
         session.username = username
-        ftpcmd.Write(session.commandConn, 331, fmt.Sprintf("Password required for %s", username))
+        ftpIO.Write(session.commandConn, 331, fmt.Sprintf("Password required for %s", username))
         return true
     }
     return true
@@ -213,25 +236,25 @@ func cmdUser(session *Session, command Command) (bool) {
 
 func cmdPass(session *Session, command Command) (bool) {
     if session.username == "" {
-        cmdLoginFirst(session)
+        msgLoginFirst(session)
         return true
     }
     if session.loggedIn == true {
-        ftpcmd.Write(session.commandConn, 503, "Already logged in.")
+        ftpIO.Write(session.commandConn, 503, "Already logged in.")
         return true
     }
     session.loggedIn = true
-    ftpcmd.Write(session.commandConn, 230, fmt.Sprintf("User %s logged in", session.username))
+    ftpIO.Write(session.commandConn, 230, fmt.Sprintf("User %s logged in", session.username))
     return true
 }
 
 // Does nothing, only support Stream
 func cmdMode(session *Session, command Command) (bool) {
     if strings.ToUpper(command.Args) != "S" {
-        ftpcmd.Write(session.commandConn, 504, "Bad MODE command.")
+        ftpIO.Write(session.commandConn, 504, "Bad MODE command.")
         return false
     } else {
-        ftpcmd.Write(session.commandConn, 200, "Mode set to S.")
+        ftpIO.Write(session.commandConn, 200, "Mode set to S.")
         return true
     }
 }
@@ -241,75 +264,127 @@ func cmdType(session *Session, command Command) (bool) {
     uppercaseArgs := strings.ToUpper(command.Args)
 
     if uppercaseArgs == "A" || uppercaseArgs == "A T" {
-        ftpcmd.Write(session.commandConn, 200, "Switching to ASCII mode.")
+        ftpIO.Write(session.commandConn, 200, "Switching to ASCII mode.")
         return true
     } else if uppercaseArgs == "I" {
-        ftpcmd.Write(session.commandConn, 200, "Switching to Binary mode.")
+        ftpIO.Write(session.commandConn, 200, "Switching to Binary mode.")
         return true
     } else {
-        ftpcmd.Write(session.commandConn, 500, "Unrecognised TYPE command.")
+        ftpIO.Write(session.commandConn, 500, "Unrecognised TYPE command.")
         return true
     }
 }
 
 func cmdQuit(session *Session, command Command) (bool) {
     session.timer.Stop()
-    ftpcmd.Write(session.commandConn, 221, "Goodbyye.")
-    ftpcmd.Close(session.commandConn)
+    ftpIO.Write(session.commandConn, 221, "Goodbyye.")
+    ftpIO.Close(session.commandConn)
     state.Lock()
     state.connectionCount--
     state.Unlock()
+
+    if session.pasvListener != nil {
+        session.pasvListener.Close()
+        session.pasvListener = nil
+        session.dtpState = DTP_NONE
+    }
     return true
 }
 
-func cmdLoginFirst(session *Session) (bool) {
-    ftpcmd.Write(session.commandConn, 503, "Login with USER first.")
-    return false
-}
-
-func cmdUnknown(session *Session) (bool) {
-    ftpcmd.Write(session.commandConn, 500, "Unknown command.")
-    return false
-}
-
 func cmdPasv(session *Session, command Command) (bool) {
-    addr := session.commandConn.LocalAddr()
-    fmt.Println(addr)
-    test := addr.(*net.TCPAddr).IP
-    fmt.Println(test)
-    // laddr := net.TCPAddr{IP: net.IPv4(51, 255, 255, 51), Port: 0}
-    laddr := net.TCPAddr{IP: session.commandConn.LocalAddr().(*net.TCPAddr).IP, Port: 0}
-    ln, err := net.ListenTCP("tcp4", &laddr)
+    laddr, err := net.ResolveTCPAddr("tcp", CONN_HOST + ":0")
     if err != nil {
         fmt.Println(err)
-        ftpcmd.Write(session.commandConn, 500,  "PASV failed.")
+        ftpIO.Write(session.commandConn, 500,  "PASV failed.")
+        return false
+    }
+    ln, err := net.ListenTCP("tcp", laddr)
+    if err != nil {
+        fmt.Println(err)
+        ftpIO.Write(session.commandConn, 500,  "PASV failed.")
         return false
     }
     if session.pasvListener != nil {
-        ftpcmd.Write(session.commandConn, 526,  "Already listening.")
+        ftpIO.Write(session.commandConn, 526,  "Already listening.")
         return false
     }
-    ip := ln.Addr().(*net.TCPAddr).IP
-    port := ln.Addr().(*net.TCPAddr).Port
     session.dtpState = DTP_PASSIVE
     session.pasvListener = ln
-    fmt.Printf("Listening on IP: %s port: %d\n",ip , port)
-    // Format IP and port according to FTP spec (see RFC)
-    high := port >> 8
-    low := port & 0xFF
-    reply := fmt.Sprintf("Entering Passive Mode (%d,%d,%d,%d,%d,%d).", ip[0], ip[1], ip[2], ip[3], high, low)
-    ftpcmd.Write(session.commandConn,  227, reply)
+
+    /* We are listening on both IPv4 and IPv6, adapt answer given the current *command* protocol */
+    ip := session.commandConn.LocalAddr().(*net.TCPAddr).IP.To4()
+    port := ln.Addr().(*net.TCPAddr).Port
+
+    var reply string
+    if ip == nil {
+        /* IPv6, return 0.0.0.0 as IPv4 addr */
+        reply = fmt.Sprintf("Entering Passive Mode (0,0,0,0,%d,%d).", port >> 8, port & 0xFF)
+    } else {
+        /* IPv4, return real address */
+        reply = fmt.Sprintf("Entering Passive Mode (%d,%d,%d,%d,%d,%d).", ip[0], ip[1], ip[2], ip[3], port >> 8, port & 0xFF)
+    }
+    ftpIO.Write(session.commandConn, 227, reply)
+    fmt.Printf("cmdPasv(): listening on port: %d\n", port)
+
+    return true
+}
+
+func cmdEpsv(session *Session, command Command) (bool) {
+    laddr, err := net.ResolveTCPAddr("tcp", CONN_HOST + ":0")
+    if err != nil {
+        fmt.Println(err)
+        ftpIO.Write(session.commandConn, 500,  "EPSV failed.")
+        return false
+    }
+    ln, err := net.ListenTCP("tcp", laddr)
+    if err != nil {
+        fmt.Println(err)
+        ftpIO.Write(session.commandConn, 500,  "EPSV failed.")
+        return false
+    }
+    if session.pasvListener != nil {
+        ftpIO.Write(session.commandConn, 526,  "Already listening.")
+        return false
+    }
+    session.dtpState = DTP_PASSIVE
+    session.pasvListener = ln
+
+    port := ln.Addr().(*net.TCPAddr).Port
+    reply := fmt.Sprintf("Entering Extended Passive Mode (|||%d|).", port)
+    ftpIO.Write(session.commandConn, 229, reply)
+    fmt.Printf("cmdEpsv(): listening on port: %d\n", port)
+
     return true
 }
 
 func cmdRetr(session *Session, command Command) (bool) {
     if session.dtpState == DTP_NONE {
-        ftpcmd.Write(session.commandConn, 425, "Use PORT or PASV first.")
+        ftpIO.Write(session.commandConn, 425, "Use PORT or PASV first.")
         return false
     }
 
     if session.dtpState != DTP_PASSIVE {
-        ftpcmd.Write(session.commandConn, 425, "Only PASV implemented.")
+        ftpIO.Write(session.commandConn, 425, "Only PASV implemented.")
+        return false
+    }
+
+    fileName := command.Args
+
+    if !strings.HasPrefix(fileName, "/") {
+        fileName = session.workingDir + "/" + fileName
+    }
+    fileName = path.Clean(fileName)
+    vhost := cfg.GetVhost(fileName)
+
+    // Check if URL is accessible
+    var resp *http.Response
+    ret := ftpIO.OpenUrl(vhost, fileName, &resp)
+    if ret != true {
+        // make sure ln is destroyed
+        session.pasvListener.Close()
+        session.pasvListener = nil
+        session.dtpState = DTP_NONE
+        ftpIO.Write(session.commandConn, 550, "Failed to open file.")
         return false
     }
 
@@ -321,7 +396,8 @@ func cmdRetr(session *Session, command Command) (bool) {
         session.pasvListener.Close()
         session.pasvListener = nil
         session.dtpState = DTP_NONE
-        ftpcmd.Write(session.commandConn, 500, "Failed to accept data connection.")
+        ftpIO.CloseUrl(resp)
+        ftpIO.Write(session.commandConn, 500, "Failed to accept data connection.")
         return false
     }
     fmt.Println(conn)
@@ -331,67 +407,60 @@ func cmdRetr(session *Session, command Command) (bool) {
     session.pasvListener = nil
     session.dtpState = DTP_NONE
 
-    ftpcmd.Write(session.commandConn, 150, "Opening BINARY mode data connection for x.")
-    // Sanity check and space support with quotes
-    filePath := ""
-    if strings.HasPrefix(command.Args, "/") {
-        filePath = command.Args
-    } else {
-        if strings.HasSuffix(session.workingDir, "/") {
-            filePath = fmt.Sprintf("%s%s", session.workingDir, command.Args)
-        } else {
-            filePath = fmt.Sprintf("%s/%s", session.workingDir, command.Args)
-        }
-    }
-    vhost := cfg.GetVhost(filePath)
-    ret := ftpdata.SendFile(session.dataConn, vhost, filePath)
-    if ret != true {
-        ftpcmd.Write(session.commandConn, 526, "Transfer failed.")
-        ftpdata.Close(session.dataConn)
-    }
-    ftpdata.Close(session.dataConn)
-    ftpcmd.Write(session.commandConn, 226, "Transfer complete.")
+    ftpIO.Write(session.commandConn, 150, "Opening BINARY mode data connection for x.")
 
+    ret = ftpIO.SendUrl(session.dataConn, resp)
+    ftpIO.CloseUrl(resp)
+    ftpIO.Close(session.dataConn)
+
+    if ret != true {
+        ftpIO.Write(session.commandConn, 550, "Failed to open file.")
+        return false
+    }
+    ftpIO.Write(session.commandConn, 226, "Transfer complete.")
     return true
 }
 
 func cmdPwd(session *Session, command Command) (bool) {
-    ftpcmd.Write(session.commandConn, 257, fmt.Sprintf("\"%s\"", session.workingDir))
+    ftpIO.Write(session.commandConn, 257, fmt.Sprintf("\"%s\"", session.workingDir))
     return true
 }
 
 func cmdCwd(session *Session, command Command) (bool) {
-    // Needs at least a sanity check
     newPath := command.Args
-
-    if strings.HasPrefix(newPath, "/") {
-        // Absolute path provided
-        newPath = strings.Trim(newPath, "/")
-        session.workingDir = fmt.Sprintf("/%s", newPath)
-    } else {
-        // Relative path provided
-        newPath = strings.Trim(newPath, "/")
-        if session.workingDir == "/" {
-            session.workingDir = fmt.Sprintf("/%s", newPath)
-        } else {
-            session.workingDir = fmt.Sprintf("%s/%s", session.workingDir, newPath)
-        }
+    
+    if !strings.HasPrefix(newPath, "/") {
+        newPath = session.workingDir + "/" + newPath
     }
-    ftpcmd.Write(session.commandConn, 250, "Directory successfully changed.")
-    return true
+    newPath = path.Clean(newPath)
+
+    if parseindex.IsDir(newPath) {
+        session.workingDir = newPath
+        ftpIO.Write(session.commandConn, 250, "Directory successfully changed.")
+        return true
+    }
+
+    ftpIO.Write(session.commandConn, 550, newPath + ": No such file or directory")
+    return false
 }
 
 func cmdList(session *Session, command Command) (bool) {
-    fmt.Println("BEGIN CMDLIST")
     if session.dtpState == DTP_NONE {
-        ftpcmd.Write(session.commandConn, 425, "Use PORT or PASV first.")
+        ftpIO.Write(session.commandConn, 425, "Use PORT or PASV first.")
         return false
     }
 
     if session.dtpState != DTP_PASSIVE {
-        ftpcmd.Write(session.commandConn, 425, "Only PASV implemented")
+        ftpIO.Write(session.commandConn, 425, "Only PASV implemented")
         return false
     }
+
+    dirName := command.Args
+
+    if !strings.HasPrefix(dirName, "/") {
+        dirName = session.workingDir + "/" + dirName
+    }
+    dirName = path.Clean(dirName)
 
     // Assume passive session from here
     // Same code as in RETR, factor it in AcceptAndClose()
@@ -402,7 +471,7 @@ func cmdList(session *Session, command Command) (bool) {
         session.pasvListener.Close()
         session.pasvListener = nil
         session.dtpState = DTP_NONE
-        ftpcmd.Write(session.commandConn, 500, "Failed to accept data connection.")
+        ftpIO.Write(session.commandConn, 500, "Failed to accept data connection.")
         return false
     }
     session.dataConn = conn
@@ -412,95 +481,68 @@ func cmdList(session *Session, command Command) (bool) {
     session.pasvListener = nil
     session.dtpState = DTP_NONE
 
-    ftpcmd.Write(session.commandConn, 150, "Opening BINARY mode data connection for x.")
+    ftpIO.Write(session.commandConn, 150, "Opening BINARY mode data connection for x.")
 
-    // Sending list.txt works, next two lines
-    // listFile := fmt.Sprintf("%s/%s", session.workingDir, "list.txt")
-    // ftpdata.SendFile(session.dataConn, listFile)
-
-    var listing string
-    var ret bool
-    if session.workingDir == "/" {
-        fmt.Println("CALLING TOP DIR PARSER")
-        listing, ret = session.topDirParser.Parse(session.workingDir)
-    } else {
-        fmt.Println("CALLING DEFAULT DIR PARSER")
-        listing, ret = session.defaultDirParser.Parse(session.workingDir)
-    }
+    listing, ret := parseindex.DirList(dirName)
     if ret != true {
-        ftpcmd.Write(session.commandConn, 526, "Failed to send directory, please retry.")
+        ftpIO.Write(session.commandConn, 526, "Failed to send directory, please retry.")
         return false
     }
+    ftpIO.WriteRaw(session.dataConn, listing)
+    ftpIO.Close(session.dataConn)
 
-    // Attempt to use autoindex --start
-    /* vhost := cfg.GetVhost(session.workingDir)
-    url := fmt.Sprintf("http://%s/%s/", vhost, session.workingDir)
-    fmt.Printf("LIST for url: %s\n", url)
-    resp, err := http.Get(url)
-    if err != nil {
-        fmt.Println("Error trying to GET current directory (for LIST):", err.Error())
-        ftpcmd.Write(session.commandConn, 526, "Failed to send directory, please retry.")
-        return false
-    }
-    defer resp.Body.Close()
-    objects := parseindex.ParseHtmlList(resp.Body)
-    fmt.Printf("Directory objects: %d\n", len(objects))
-    listing := parseindex.GenDirList(objects)
-    */
-    ftpdata.SendString(session.dataConn, listing)
-    // Attempt to use autoindex --end
-
-    ftpdata.Close(session.dataConn)
-    ftpcmd.Write(session.commandConn, 226, "Directory send OK.")
+    ftpIO.Write(session.commandConn, 226, "Directory send OK.")
 
     return true
 }
 
 func cmdFeat(session *Session, command Command) (bool) {
-    featReply := "211-Features:\r\n MDTM\r\n211 End\r\n"
+    featReply := "211-Features:\r\n MDTM\r\n SIZE\r\n EPSV\r\n211 End\r\n"
 
-    ftpcmd.WriteRaw(session.commandConn, featReply)
+    ftpIO.WriteRaw(session.commandConn, featReply)
     return true
 }
 
 func cmdMdtm(session *Session, command Command) (bool) {
     fileName := command.Args
-    var fileTime string
-    var ret bool
-    if session.workingDir == "/" {
-        fmt.Println("Mdtm (top dir parser)")
-        _, fileTime, ret = session.topDirParser.SimpleStat(session.workingDir, fileName)
-    } else {
-        fmt.Println("Mdtm (default parser)")
-        _, fileTime, ret = session.defaultDirParser.SimpleStat(session.workingDir, fileName)
+
+    if !strings.HasPrefix(fileName, "/") {
+        fileName = session.workingDir + "/" + fileName
     }
+    fileName = path.Clean(fileName)
+
+    _, fileTime, ret := parseindex.FileStat(fileName)
     if ret != true {
-        ftpcmd.Write(session.commandConn, 550, "Could not get file modification time.")
+        ftpIO.Write(session.commandConn, 550, "Could not get file modification time.")
         return false
     }
 
-    ftpcmd.Write(session.commandConn, 213, fileTime)
+    ftpIO.Write(session.commandConn, 213, fileTime)
 
     return true
 }
 
 func cmdSize(session *Session, command Command) (bool) {
     fileName := command.Args
-    var fileSize int64
-    var ret bool
-    if session.workingDir == "/" {
-        fmt.Println("Size (top dir parser)")
-        fileSize, _, ret = session.topDirParser.SimpleStat(session.workingDir, fileName)
-    } else {
-        fmt.Println("Size (default parser)")
-        fileSize, _, ret = session.defaultDirParser.SimpleStat(session.workingDir, fileName)
+
+    if !strings.HasPrefix(fileName, "/") {
+        fileName = session.workingDir + "/" + fileName
     }
+    fileName = path.Clean(fileName)
+
+    fileSize, _, ret := parseindex.FileStat(fileName)
     if ret != true {
-        ftpcmd.Write(session.commandConn, 550, "Could not get file size.")
+        ftpIO.Write(session.commandConn, 550, "Could not get file size.")
         return false
     }
 
-    ftpcmd.Write(session.commandConn, 213, strconv.FormatInt(fileSize, 10))
+    ftpIO.Write(session.commandConn, 213, strconv.FormatInt(fileSize, 10))
+
+    return true
+}
+
+func cmdSyst(session *Session, command Command) (bool) {
+    ftpIO.Write(session.commandConn, 215, "UNIX Type: L8")
 
     return true
 }

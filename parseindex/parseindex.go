@@ -3,7 +3,10 @@ package parseindex
 import "fmt"
 import "golang.org/x/net/html"
 import "cfg"
+import "ftpIO"
 import "net/http"
+import "path"
+import "sort"
 import "strings"
 import "time"
 //import "bufio"
@@ -20,6 +23,20 @@ type FsObject struct {
     name string
     time time.Time
     size int64
+}
+
+type FsObjectSlice []FsObject
+
+func (f FsObjectSlice) Len() int {
+    return len(f)
+}
+
+func (f FsObjectSlice) Swap(i, j int) {
+    f[i], f[j] = f[j], f[i]
+}
+
+func (f FsObjectSlice) Less(i, j int) bool {
+    return f[i].name < f[j].name
 }
 
 func GenDirList(objects []FsObject) (string) {
@@ -51,80 +68,81 @@ func getTokenAttr(tok *html.Token, attrName string) (string) {
     return ""
 }
 
-type Parser interface {
-    Parse(path string) (string, bool)
-    SimpleStat(dirPath string, fileName string) (int64, string, bool)
-}
-
-type ParserAutoIndex struct {
-}
-
-func (p ParserAutoIndex) Parse(path string) (string, bool) {
+func GetFSObjects(dirName string) (FsObjectSlice, bool) {
     cfg.LoadConfig("ftproxy.conf")
-    vhost := cfg.GetVhost(path)
-    url := fmt.Sprintf("http://%s/%s/", vhost, path)
-    fmt.Printf("URL FOR INDEX: %s\n", url)
-    resp, err := http.Get(url)
-    if err != nil {
-        return "", false
-    }
-    defer resp.Body.Close()
-    var objects []FsObject
-    fmt.Printf("Server header: %s\n", resp.Header["Server"][0])
-    if strings.Contains(resp.Header["Server"][0], "nginx") {
-        objects = ParseNginxHtmlList(resp.Body)
+    dirName = path.Clean(dirName)
+    var objects FsObjectSlice
+
+    if dirName == "/" {
+        vhosts := cfg.GetVhosts()
+        fmt.Printf("GetFSObjects(): dir: %s, generating fake listing from vhosts\n", dirName)
+        curObj := new(FsObject)
+        for path, _  := range vhosts {
+            // Generate fake timestamps for first-level directories (our list of vhosts)
+            curObj.name = strings.Trim(path, "/")
+            curObj.time = time.Now()
+            curObj.size = 4096 /* XXX fake size */
+            curObj.otype = FS_DIR
+            objects = append(objects, *curObj)
+        }
+        // Always return root directory entries in the same order
+        sort.Sort(objects)
     } else {
-        // Attempt apache
-        objects = ParseApacheHtmlList(resp.Body)
+        vhost := cfg.GetVhost(dirName)
+        var resp *http.Response
+        ret := ftpIO.OpenUrl(vhost, dirName, &resp)
+        if ret != true {
+            return objects, false
+        }
+        fmt.Printf("Server header: %s\n", resp.Header["Server"][0])
+        if strings.Contains(resp.Header["Server"][0], "nginx") {
+            objects = ParseNginxHtmlList(resp.Body)
+        } else {
+            objects = ParseApacheHtmlList(resp.Body)
+        }
+        ftpIO.CloseUrl(resp)
+    }
+    return objects, true
+}
+
+func DirList(path string) (string, bool) {
+    objects, ret := GetFSObjects(path)
+    if ret != true {
+        return "", false
     }
     return GenDirList(objects), true
 }
 
-type ParserConf struct {
-}
-
-func (p ParserConf) Parse(truc string) (string, bool) {
-    cfg.LoadConfig("ftproxy.conf")
-    vhosts := cfg.GetVhosts()
-    var listing string
-    for path, _  := range vhosts {
-        // Generate fake timestamps for first-level directories (our list of vhosts)
-        listing = fmt.Sprintf("%sdrwxr-xr-x 1 ftp ftp 4096 %s %s\r\n", listing, time.Now().Format(time.Stamp), strings.Trim(path, "/"))
-    }
-    return listing, true
-}
-
-/* As with DIR, this assumes we look for a file in the current directory(dirPath).
-   fileName must be a single file name. Proper directory handling TBD */
-func (p ParserAutoIndex) SimpleStat(dirPath string, fileName string) (int64, string, bool) {
-    /* Whole section below similar to Parse(), factor it in a separate function */
-    cfg.LoadConfig("ftproxy.conf")
-    fmt.Printf("SimpleStat stat for file: -%s-\n", fileName)
-    vhost := cfg.GetVhost(dirPath)
-    url := fmt.Sprintf("http://%s/%s/", vhost, dirPath)
-    fmt.Printf("URL FOR INDEX: %s\n", url)
-    resp, err := http.Get(url)
-    if err != nil {
-        return 0, "", false
-    }
-    defer resp.Body.Close()
-    var objects []FsObject
-    fmt.Printf("Server header: %s\n", resp.Header["Server"][0])
-    if strings.Contains(resp.Header["Server"][0], "nginx") {
-        objects = ParseNginxHtmlList(resp.Body)
-    } else {
-        objects = ParseApacheHtmlList(resp.Body)
-    }
-    /* End section*/
-    for _, object := range objects {
-        if object.name == fileName && object.otype == FS_FILE {
-            fmt.Printf("Found file, size is: %d, time is: %s\n", object.size, object.time)
-            return object.size, object.time.Format("20060102030405"), true
+func FileStat(filePath string) (int64, string, bool) {
+    dirName, fileName := path.Split(filePath)
+    objects, ret := GetFSObjects(dirName)
+    if ret == true {
+        for _, object := range objects {
+            if object.name == fileName && object.otype == FS_FILE {
+                fmt.Printf("Found file, size is: %d, time is: %s\n", object.size, object.time)
+                return object.size, object.time.Format("20060102030405"), true
+            }
         }
     }
     return 0, "", false
 }
 
-func (p ParserConf) SimpleStat(dirPath string, fileName string) (int64, string, bool) {
-    return 0, "", false
+func IsDir(dirPath string) (bool) {
+    parentName, dirName := path.Split(dirPath)
+
+    // Root is a special case, do not try to probe it:
+    // it always exists and is a directory!
+    if parentName == "/" && dirName == "" {
+        return true
+    }
+
+    objects, ret := GetFSObjects(parentName)
+    if ret == true {
+        for _, object := range objects {
+            if object.name == dirName && object.otype == FS_DIR {
+                return true
+            }
+        }
+    }
+    return false
 }
