@@ -14,7 +14,7 @@ func Close(conn net.Conn) {
 
 /*
 func CheckUrl(httpIp string, filePath string) (bool) {
-    url := fmt.Sprintf("http://%s/%s", httpIp, filePath)
+    url := fmt.Sprintf("http://%s%s", httpIp, filePath)
     fmt.Printf("Checking file: %s\n", url)
 
     // Check if file is accessible
