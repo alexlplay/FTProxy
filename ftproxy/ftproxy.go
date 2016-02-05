@@ -121,6 +121,7 @@ func handleRequest(conn net.Conn) {
         "LIST": cmdList,
         "MDTM": cmdMdtm,
         "SIZE": cmdSize,
+        "SYST": cmdSyst,
     }
 
     scanner := bufio.NewScanner(conn)
@@ -532,6 +533,12 @@ func cmdSize(session *Session, command Command) (bool) {
     }
 
     ftpcmd.Write(session.commandConn, 213, strconv.FormatInt(fileSize, 10))
+
+    return true
+}
+
+func cmdSyst(session *Session, command Command) (bool) {
+    ftpcmd.Write(session.commandConn, 215, "UNIX Type: L8")
 
     return true
 }
