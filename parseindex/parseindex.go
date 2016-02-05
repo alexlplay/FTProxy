@@ -3,6 +3,7 @@ package parseindex
 import "fmt"
 import "golang.org/x/net/html"
 import "cfg"
+import "ftpdata"
 import "net/http"
 import "path"
 import "strings"
@@ -52,7 +53,7 @@ func getTokenAttr(tok *html.Token, attrName string) (string) {
     return ""
 }
 
-func GetFSObjects(dirName string) ([]FsObject) {
+func GetFSObjects(dirName string) ([]FsObject, bool) {
     cfg.LoadConfig("ftproxy.conf")
     dirName = path.Clean(dirName)
     var objects []FsObject
@@ -71,35 +72,39 @@ func GetFSObjects(dirName string) ([]FsObject) {
         }
     } else {
         vhost := cfg.GetVhost(dirName)
-        url := fmt.Sprintf("http://%s%s", vhost, dirName)
-        fmt.Printf("GetFSObjects(): dir: %s, url: %s\n", dirName, url)
-        resp, err := http.Get(url)
-        if err != nil {
-            return objects
+        var resp *http.Response
+        ret := ftpdata.OpenUrl(vhost, dirName, &resp)
+        if ret != true {
+            return objects, false
         }
-        defer resp.Body.Close()
         fmt.Printf("Server header: %s\n", resp.Header["Server"][0])
         if strings.Contains(resp.Header["Server"][0], "nginx") {
             objects = ParseNginxHtmlList(resp.Body)
         } else {
             objects = ParseApacheHtmlList(resp.Body)
         }
+        ftpdata.CloseUrl(resp)
     }
-    return objects
+    return objects, true
 }
 
 func DirList(path string) (string, bool) {
-    objects := GetFSObjects(path)
+    objects, ret := GetFSObjects(path)
+    if ret != true {
+        return "", false
+    }
     return GenDirList(objects), true
 }
 
 func FileStat(filePath string) (int64, string, bool) {
     dirName, fileName := path.Split(filePath)
-    objects := GetFSObjects(dirName)
-    for _, object := range objects {
-        if object.name == fileName && object.otype == FS_FILE {
-            fmt.Printf("Found file, size is: %d, time is: %s\n", object.size, object.time)
-            return object.size, object.time.Format("20060102030405"), true
+    objects, ret := GetFSObjects(dirName)
+    if ret == true {
+        for _, object := range objects {
+            if object.name == fileName && object.otype == FS_FILE {
+                fmt.Printf("Found file, size is: %d, time is: %s\n", object.size, object.time)
+                return object.size, object.time.Format("20060102030405"), true
+            }
         }
     }
     return 0, "", false
