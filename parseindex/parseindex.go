@@ -6,6 +6,7 @@ import "cfg"
 import "ftpIO"
 import "net/http"
 import "path"
+import "sort"
 import "strings"
 import "time"
 //import "bufio"
@@ -22,6 +23,20 @@ type FsObject struct {
     name string
     time time.Time
     size int64
+}
+
+type FsObjectSlice []FsObject
+
+func (f FsObjectSlice) Len() int {
+    return len(f)
+}
+
+func (f FsObjectSlice) Swap(i, j int) {
+    f[i], f[j] = f[j], f[i]
+}
+
+func (f FsObjectSlice) Less(i, j int) bool {
+    return f[i].name < f[j].name
 }
 
 func GenDirList(objects []FsObject) (string) {
@@ -53,10 +68,10 @@ func getTokenAttr(tok *html.Token, attrName string) (string) {
     return ""
 }
 
-func GetFSObjects(dirName string) ([]FsObject, bool) {
+func GetFSObjects(dirName string) (FsObjectSlice, bool) {
     cfg.LoadConfig("ftproxy.conf")
     dirName = path.Clean(dirName)
-    var objects []FsObject
+    var objects FsObjectSlice
 
     if dirName == "/" {
         vhosts := cfg.GetVhosts()
@@ -70,6 +85,8 @@ func GetFSObjects(dirName string) ([]FsObject, bool) {
             curObj.otype = FS_DIR
             objects = append(objects, *curObj)
         }
+        // Always return root directory entries in the same order
+        sort.Sort(objects)
     } else {
         vhost := cfg.GetVhost(dirName)
         var resp *http.Response
