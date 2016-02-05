@@ -109,3 +109,23 @@ func FileStat(filePath string) (int64, string, bool) {
     }
     return 0, "", false
 }
+
+func IsDir(dirPath string) (bool) {
+    parentName, dirName := path.Split(dirPath)
+
+    // Root is a special case, do not try to probe it:
+    // it always exists and is a directory!
+    if parentName == "/" && dirName == "" {
+        return true
+    }
+
+    objects, ret := GetFSObjects(parentName)
+    if ret == true {
+        for _, object := range objects {
+            if object.name == dirName && object.otype == FS_DIR {
+                return true
+            }
+        }
+    }
+    return false
+}

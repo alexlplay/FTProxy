@@ -433,10 +433,16 @@ func cmdCwd(session *Session, command Command) (bool) {
     if !strings.HasPrefix(newPath, "/") {
         newPath = session.workingDir + "/" + newPath
     }
-    session.workingDir = path.Clean(newPath)
+    newPath = path.Clean(newPath)
 
-    ftpcmd.Write(session.commandConn, 250, "Directory successfully changed.")
-    return true
+    if parseindex.IsDir(newPath) {
+        session.workingDir = newPath
+        ftpcmd.Write(session.commandConn, 250, "Directory successfully changed.")
+        return true
+    }
+
+    ftpcmd.Write(session.commandConn, 550, newPath + ": No such file or directory")
+    return false
 }
 
 func cmdList(session *Session, command Command) (bool) {
