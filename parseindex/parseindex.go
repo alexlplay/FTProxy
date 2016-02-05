@@ -3,7 +3,7 @@ package parseindex
 import "fmt"
 import "golang.org/x/net/html"
 import "cfg"
-import "ftpdata"
+import "ftpIO"
 import "net/http"
 import "path"
 import "strings"
@@ -73,7 +73,7 @@ func GetFSObjects(dirName string) ([]FsObject, bool) {
     } else {
         vhost := cfg.GetVhost(dirName)
         var resp *http.Response
-        ret := ftpdata.OpenUrl(vhost, dirName, &resp)
+        ret := ftpIO.OpenUrl(vhost, dirName, &resp)
         if ret != true {
             return objects, false
         }
@@ -83,7 +83,7 @@ func GetFSObjects(dirName string) ([]FsObject, bool) {
         } else {
             objects = ParseApacheHtmlList(resp.Body)
         }
-        ftpdata.CloseUrl(resp)
+        ftpIO.CloseUrl(resp)
     }
     return objects, true
 }

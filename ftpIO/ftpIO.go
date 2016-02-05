@@ -1,4 +1,4 @@
-package ftpdata
+package ftpIO
 
 import (
     "fmt"
@@ -8,8 +8,19 @@ import (
 )
 
 func Close(conn net.Conn) {
-    fmt.Printf("closing data connection\n")
+    fmt.Printf("Closing connection\n")
     conn.Close()
+}
+
+func WriteRaw(conn net.Conn, rawText string) {
+    conn.Write([]byte(rawText))
+}
+
+func Write(conn net.Conn, status int, text string) {
+    // Must format string according to FTP spec, see :
+    // https://github.com/dagwieers/vsftpd/blob/master/ftpcmdio.c
+    response := fmt.Sprintf("%d %s\r\n", status, text)
+    WriteRaw(conn, response)
 }
 
 /*
@@ -66,8 +77,4 @@ func CloseUrl(resp *http.Response) (bool) {
 
     resp.Body.Close()
     return true
-}
-
-func SendString(conn net.Conn, data string) {
-    conn.Write([]byte(data))
 }
