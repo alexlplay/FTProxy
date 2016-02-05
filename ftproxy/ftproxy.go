@@ -493,7 +493,7 @@ func cmdList(session *Session, command Command) (bool) {
 }
 
 func cmdFeat(session *Session, command Command) (bool) {
-    featReply := "211-Features:\r\n MDTM\r\n211 End\r\n"
+    featReply := "211-Features:\r\n MDTM\r\n SIZE\r\n EPSV\r\n211 End\r\n"
 
     ftpcmd.WriteRaw(session.commandConn, featReply)
     return true
