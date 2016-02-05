@@ -129,8 +129,7 @@ func handleRequest(conn net.Conn) {
     var cmdCallBack func(session *Session, command Command) (bool)
     var exists bool
 
-
-    conn.Write([]byte("220 (FTProxy)\n"))
+    ftpcmd.Write(session.commandConn, 220, "(FTProxy)")
     session.timer = time.NewTimer(time.Second * 60)
     go ctrlTimeout(&session)
 
